@@ -10,6 +10,7 @@
 // - man pages
 // - http://www.csl.mtu.edu/cs4411.ck/www/NOTES/process/fork/exec.html
 // - https://stackoverflow.com/questions/28502305/writing-a-simple-shell-in-c-using-fork-execvp
+// - https://stackoverflow.com/questions/50280498/how-to-only-kill-the-child-process-in-the-foreground?fbclid=IwAR3pmr6csA0gT0yvCAnDYu0Q8XEoaVJwyaIOVegXKnE_zVu62X1aKlUYkfk
 // - 
 
 #include <stdio.h>
@@ -27,6 +28,7 @@
 #define ARGS_NUM 50
 #define PATH_LEN 100
 
+// Handler for when a process is run in the background using '&'
 void signalChildHandler(int signalPassed) {
     wait(NULL);
     // if system call interrupted, reset 
