@@ -25,12 +25,30 @@
 #include <errno.h>
 
 #define BUFFER_LEN 500
+#define MAX_PROCESSES 250
 #define ARGS_NUM 50
 #define PATH_LEN 100
 
+static int process_count;
+static pid_t processes[250];
+static char line_cpy[250][BUFFER_LEN];
+
 // Handler for when a process is run in the background using '&'
 void signalChildHandler(int signalPassed) {
-    wait(NULL);
+    int *tempInt;
+    int i = 0;
+    pid_t temp = wait(NULL);
+
+    if (temp != -1) {
+        for (i = 0; i < process_count; i++) {
+            if (processes[i] == temp) {
+                processes[i] = -1;
+                break;
+            }
+        }
+        printf("[%d]+ Done\t\t%s\n", i + 1, line_cpy[i]);
+        process_count--;
+    }
     // if system call interrupted, reset 
     if(errno == EINTR) {
         errno = 0;
@@ -40,16 +58,17 @@ void signalChildHandler(int signalPassed) {
 int main () {
 
     bool running = true;
-    char line[BUFFER_LEN];
     int argc;
     char* argv[ARGS_NUM];
     int i;
-    int status;
+    char line[BUFFER_LEN];
+    int status = -1;
     struct sigaction sigact;
     sigact.sa_flags = SA_RESTART | SA_NOCLDSTOP;
     sigact.sa_handler = SIG_IGN;
     memset(&sigact, 0, sizeof(struct sigaction));
     bool background = false;
+    process_count = 0;
 
     while (running) {
         printf("> ");
@@ -60,6 +79,9 @@ int main () {
         if (line[len - 1] == '\n') {
             line[len - 1] = '\0';
         }
+
+        // copy/save command for later use
+        strcpy(line_cpy[process_count], line);
 
         char *token; //split command into separate strings
         token = strtok(line, " ");
@@ -82,7 +104,7 @@ int main () {
         pid_t child_pid = fork(); // fork child
 
         // Check to see if process should be run in the background
-        if (argv[argc - 1][0] == '&') {
+        if (argc >= 1 && argv[argc - 1] != NULL && strcmp(argv[argc - 1], "&") == 0) {
             background = true;
             argv[argc - 1] = NULL; // remove the amperstand
             argc--;
@@ -115,11 +137,14 @@ int main () {
                     sigact.sa_flags = SA_RESTART | SA_NOCLDSTOP;
                     sigact.sa_handler = &signalChildHandler;
                     sigaction(SIGCHLD, &sigact, NULL);
+                    processes[process_count] = child_pid;
+                    process_count = process_count + 1;
+                    printf("[%d] %d\n", process_count, child_pid);
                 }
 
             }
         } else {
-            perror("fork");
+            perror("fork failed");
             exit(EXIT_FAILURE);
         }
 

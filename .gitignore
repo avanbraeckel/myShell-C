@@ -6,3 +6,5 @@ myShell
 *.[oa]
 sharedMem.c
 signalExample.c
+wait
+wait.c
