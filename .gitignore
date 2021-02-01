@@ -8,3 +8,4 @@ sharedMem.c
 signalExample.c
 wait
 wait.c
+*.md

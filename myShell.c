@@ -6,11 +6,12 @@
  */
 
 // SOURCES USED:
-// - class courselink examples
+// - class CourseLink examples
 // - man pages
 // - http://www.csl.mtu.edu/cs4411.ck/www/NOTES/process/fork/exec.html
 // - https://stackoverflow.com/questions/28502305/writing-a-simple-shell-in-c-using-fork-execvp
 // - https://stackoverflow.com/questions/50280498/how-to-only-kill-the-child-process-in-the-foreground?fbclid=IwAR3pmr6csA0gT0yvCAnDYu0Q8XEoaVJwyaIOVegXKnE_zVu62X1aKlUYkfk
+// - https://stackoverflow.com/questions/12663270/freopen-and-execvp-in-c
 // - 
 
 #include <stdio.h>
@@ -37,8 +38,8 @@ static char line_cpy[250][BUFFER_LEN];
 void signalChildHandler(int signalPassed) {
     int *tempInt;
     int i = 0;
-    pid_t temp = wait(NULL);
 
+    pid_t temp = wait(NULL);
     if (temp != -1) {
         for (i = 0; i < process_count; i++) {
             if (processes[i] == temp) {
@@ -69,9 +70,14 @@ int main () {
     memset(&sigact, 0, sizeof(struct sigaction));
     bool background = false;
     process_count = 0;
+    bool write_out = false;
+    bool read_in = false;
 
     while (running) {
         printf("> ");
+
+        write_out = false;
+        read_in = false;
 
         if(!fgets(line, BUFFER_LEN, stdin)) break; //stops if user presses CTRL+D
         // remove \n character at the end of the line
@@ -101,6 +107,20 @@ int main () {
             exit(EXIT_SUCCESS);
         }  
 
+        // check for redirects to files (reading/writing)
+        if (argc >= 3) {
+            if(strcmp(argv[argc - 2], "<") == 0) {
+                read_in = true;
+            }
+            else if(strcmp(argv[argc - 2], ">") == 0) {
+                write_out = true;
+            }
+        }
+
+        if (read_in || write_out) {
+
+        }
+
         pid_t child_pid = fork(); // fork child
 
         // Check to see if process should be run in the background
@@ -121,12 +141,40 @@ int main () {
 
         if (child_pid >= 0) { // fork succeeded
             if(child_pid == 0){ // Child
+                
+                if(write_out) {
+                    // set the file as the output
+                    freopen(argv[argc - 1], "w+", stdout);
+                    // remove the redirect and file name from the args
+                    argv[argc - 2] = NULL;
+                    argv[argc - 1] = NULL;
+                    status = execvp(argv[0], argv);
+                    if(status == -1) { // catch execvp error
+                        fprintf(stderr, "-myShell: %s: command not found\n", line);
+                        perror("command not found");
+                        exit(EXIT_FAILURE);
+                    }
 
-                status = execvp(argv[0], argv);
-                if(status == -1) { // catch execvp error
-                    fprintf(stderr, "-myShell: %s: command not found\n", line);
-                    perror("");
-                    exit(EXIT_FAILURE);
+                } else if(read_in) {
+                    // set the file as the input
+                    freopen(argv[argc - 1], "r", stdin);
+                    // remove the redirect from the args ('<' or '>'), but leave file name
+                    argv[argc - 2] = argv[argc - 1];
+                    argv[argc - 1] = NULL;
+                    status = execvp(argv[0], argv);
+                    if(status == -1) { // catch execvp error
+                        fprintf(stderr, "-myShell: %s: command not found\n", line);
+                        perror("command not found");
+                        exit(EXIT_FAILURE);
+                    }
+
+                } else {
+                    status = execvp(argv[0], argv);
+                    if(status == -1) { // catch execvp error
+                        fprintf(stderr, "-myShell: %s: command not found\n", line);
+                        perror("command not found");
+                        exit(EXIT_FAILURE);
+                    }
                 }
 
             }else{ // Parent
@@ -148,7 +196,7 @@ int main () {
             exit(EXIT_FAILURE);
         }
 
-    } // end of running while loop
+    } // end of running (infinite) while loop
 
 }
 
