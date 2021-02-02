@@ -3,7 +3,7 @@
 # CIS*3110 Assignment 1 Makefile
 
 CC = gcc
-CFLAGS = -std=gnu99 -Wpedantic -g
+CFLAGS = -std=gnu99 -Wpedantic -Wall -g
 
 myShell: myShell.o
 	$(CC) $(CFLAGS) -o myShell myShell.o

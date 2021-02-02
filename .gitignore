@@ -7,5 +7,6 @@ myShell
 sharedMem.c
 signalExample.c
 wait
-wait.c
+wait.*
 *.md
+interactive.*
