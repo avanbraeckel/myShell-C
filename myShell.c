@@ -15,7 +15,7 @@
 // - https://stackoverflow.com/questions/13801175/classic-c-using-pipes-in-execvp-function-stdin-and-stdout-redirection
 // - https://www.geeksforgeeks.org/c-program-demonstrate-fork-and-pipe/
 // - https://www.geeksforgeeks.org/making-linux-shell-c/
-// - 
+// - https://www.cs.cornell.edu/courses/cs414/2004su/homework/shell/shell.html
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,26 +82,47 @@ int main () {
     int pipe_fd[2]; // stores two ends of the pipe
     char home[BUFFER_LEN];
     char pwd[BUFFER_LEN]; // present working directory
+    FILE *profile = NULL;
+    FILE *histfile = NULL;
+    int hist_length = 0;
 
     // get current directory and store it for future reference
     getcwd(home, BUFFER_LEN - 1);
 
+    // open the histfile for writing/reading
+    if ((histfile = fopen(".CIS3110_history", "w+")) == NULL) {
+        fprintf(stderr, "ERROR: Failed to open histfile for reading/writing.\n");
+        exit(EXIT_FAILURE);
+    }
+
     while (running) {
         getcwd(pwd, BUFFER_LEN - 1);
-        printf("%s> ", pwd);
+        printf("~%s> ", pwd);
 
         write_out = false;
         read_in = false;
 
         if(!fgets(line, BUFFER_LEN, stdin)) break; //stops if user presses CTRL+D
+
+        if (line == NULL) { // return if line is empty
+            continue;
+        }
+
         // remove \n character at the end of the line
         int len = strlen(line);
         if (line[len - 1] == '\n') {
             line[len - 1] = '\0';
         }
 
+        // store command in histfile
+        if (line != NULL) {
+            fprintf(histfile, " %d  %s\n", hist_length + 1, line);
+            hist_length++;
+        }
+
         // copy/save command for later use
         strcpy(line_cpy[process_count], line);
+
 
         char *token; //split command into separate strings
         token = strtok(line, " ");
@@ -117,6 +138,16 @@ int main () {
         // EXIT
         if (argv[0] != NULL && strcmp(argv[0], "exit") == 0) {
             printf("myShell terminating...\n");
+            // reset signal action
+            sig_act.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+            sig_act.sa_handler = SIG_IGN;                
+            sigaction(SIGCHLD, &sig_act, NULL);
+            // kill any background processes
+            if (process_count > 0 || background == true) {
+                for(i = 0; i < process_count; i++) {
+                    kill(processes[i], SIGKILL);
+                }
+            }
             // free allocated memory
             for (i = 0; i < parsed_pipe_len; i++) {
                 free(parsed_pipe[i]);
@@ -126,16 +157,65 @@ int main () {
                 free(parsed_pre_pipe[i]);
             }
             free(parsed_pre_pipe);
+            if (histfile != NULL) {
+                fclose(histfile);
+            }
+            if (profile != NULL) {
+                fclose(profile);
+            }
             printf("\n[Process completed]\n");
             exit(EXIT_SUCCESS);
         }  
 
         // Change Directory
         if (argv[0] != NULL && strcmp(argv[0], "cd") == 0) {
-            if (argv[1] == NULL) {
-                argv[1] = "";
+            if (argv[1] != NULL) {
+                if (strcmp(argv[1], "~") == 0) { // go to $HOME
+                    chdir(home);
+                } else { // go to specified path otherwise
+                    chdir(argv[1]);
+                }
             }
-            chdir(argv[1]);
+            continue;
+        }
+
+        // Print history
+        if (argv[0] != NULL && strcmp(argv[0], "history") == 0) {
+            char temp_line[BUFFER_LEN] = " ";
+                if (argv[1] != NULL && strcmp(argv[1], "-c") == 0) { // clear history
+                    if (histfile != NULL) {
+                        fclose(histfile);
+                        histfile = NULL;
+                    }
+                    // open a new histfile for writing/reading
+                    if ((histfile = fopen(".CIS3110_history", "w+")) == NULL) {
+                        fprintf(stderr, "ERROR: Failed to open histfile for reading/writing.\n");
+                        exit(EXIT_FAILURE);
+                    }
+                    hist_length = 0; //reset length as well
+                } else { //print history
+                    int counter = 0;
+                    if (argv[1] != NULL) { // only print last n lines
+                        int n = atoi(argv[1]);
+                        if (n != 0) {
+                            if (n > hist_length) {
+                                fprintf(stderr, "-myShell: %s: size of n is too large\n", line);
+                                continue;
+                            }
+                            counter = hist_length - n;
+                        }
+                    }
+                    // reset file pointer position
+                    fseek(histfile, 0, SEEK_SET);
+                    // skip lines of history if n is specified
+                    for (i = 0; i < counter; i++) {
+                        fgets(temp_line, BUFFER_LEN - 1, histfile);
+                    }
+                    // print the history (n lines)
+                    while (fgets(temp_line, BUFFER_LEN - 1, histfile) != NULL) {
+                        printf("%s", temp_line);
+                    }
+                }
             continue;
         }
 
@@ -157,7 +237,6 @@ int main () {
         if (piping) {
             // set-up pipes
             if (pipe(pipe_fd) == -1) { 
-                printf("HERE pipe\n");
                 perror("Pipe Failed"); 
                 exit(EXIT_FAILURE);
             }
@@ -235,7 +314,7 @@ int main () {
                     if(status == -1) { // catch execvp error
                         fprintf(stderr, "-myShell: %s: command not found\n", line);
                         perror("command not found");
-                        
+                        exit(EXIT_FAILURE);
                     }
 
                 } else if(piping) {
@@ -256,7 +335,6 @@ int main () {
                         exit(EXIT_FAILURE);
                     }
                 }
-//FIX THIS SECTION BELOW --------------------------------------------------------------------------------------
             } else { // Parent
                 if (piping) {
                     close(pipe_fd[0]); // closing pipe read
@@ -265,6 +343,7 @@ int main () {
                     if(status == -1) { // catch execvp error
                         fprintf(stderr, "-myShell: %s: command not found\n", line);
                         perror("command not found");
+                        strcpy(line, "");
                         exit(EXIT_FAILURE);
                     }
                 } else if (!background) { // NOT running in the background
