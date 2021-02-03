@@ -80,9 +80,15 @@ int main () {
     bool read_in = false;
     bool piping = false;
     int pipe_fd[2]; // stores two ends of the pipe
+    char home[BUFFER_LEN];
+    char pwd[BUFFER_LEN]; // present working directory
+
+    // get current directory and store it for future reference
+    getcwd(home, BUFFER_LEN - 1);
 
     while (running) {
-        printf("> ");
+        getcwd(pwd, BUFFER_LEN - 1);
+        printf("%s> ", pwd);
 
         write_out = false;
         read_in = false;
@@ -123,6 +129,15 @@ int main () {
             printf("\n[Process completed]\n");
             exit(EXIT_SUCCESS);
         }  
+
+        // Change Directory
+        if (argv[0] != NULL && strcmp(argv[0], "cd") == 0) {
+            if (argv[1] == NULL) {
+                argv[1] = "";
+            }
+            chdir(argv[1]);
+            continue;
+        }
 
         // check for redirects to files (reading/writing), and piping 
         if (argc >= 3) {
