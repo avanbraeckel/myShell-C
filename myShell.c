@@ -65,6 +65,8 @@ int main () {
     char* argv[ARGS_NUM];
     char** parsed_pipe = malloc(sizeof(char*) * ARGS_NUM);
     char** parsed_pre_pipe = malloc(sizeof(char*) * ARGS_NUM);
+    int parsed_pipe_len = 0;
+    int parsed_pre_pipe_len = 0;
     int i;
     char line[BUFFER_LEN];
     int status = -1;
@@ -109,6 +111,15 @@ int main () {
         // EXIT
         if (argv[0] != NULL && strcmp(argv[0], "exit") == 0) {
             printf("myShell terminating...\n");
+            // free allocated memory
+            for (i = 0; i < parsed_pipe_len; i++) {
+                free(parsed_pipe[i]);
+            }
+            free(parsed_pipe);
+            for (i = 0; i < parsed_pre_pipe_len; i++) {
+                free(parsed_pre_pipe[i]);
+            }
+            free(parsed_pre_pipe);
             printf("\n[Process completed]\n");
             exit(EXIT_SUCCESS);
         }  
@@ -131,6 +142,7 @@ int main () {
         if (piping) {
             // set-up pipes
             if (pipe(pipe_fd) == -1) { 
+                printf("HERE pipe\n");
                 perror("Pipe Failed"); 
                 exit(EXIT_FAILURE);
             }
@@ -141,6 +153,7 @@ int main () {
             for (i = 0; i < argc; i++) {
                 if (strcmp(argv[i], "|") == 0) {
                     passed_pipe_char = true;
+                    parsed_pre_pipe_len = j + 1;
                     parsed_pre_pipe[j + 1] = NULL;
                     j = -1; // -1 so that it is = 0 in the next iteration
                 } else if (passed_pipe_char) {
@@ -152,6 +165,7 @@ int main () {
                 }
                 j++;
             }
+            parsed_pipe_len = j;
         }
 
         // reset signal action
@@ -170,8 +184,9 @@ int main () {
             sig_act.sa_handler = SIG_IGN; // ignore
             sigemptyset(&sig_act.sa_mask);
             if (sigaction(SIGCHLD, &sig_act, NULL) < 0) {
+                printf("HERE sig\n");
                 perror("sigaction()");
-                exit(1);
+                exit(EXIT_FAILURE);
             }
         } else {
             background = false;
