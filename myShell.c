@@ -28,10 +28,10 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define BUFFER_LEN 500
+#define BUFFER_LEN 1000
 #define MAX_PROCESSES 250
 #define ARGS_NUM 50
-#define PATH_LEN 100
+#define PATH_LEN 1000
 
 static int process_count;
 static pid_t processes[250];
@@ -63,8 +63,8 @@ int main () {
     bool running = true;
     int argc;
     char* argv[ARGS_NUM];
-    char* parsed_pipe[ARGS_NUM];
-    char* parsed_pre_pipe[ARGS_NUM];
+    char** parsed_pipe = malloc(sizeof(char*) * ARGS_NUM);
+    char** parsed_pre_pipe = malloc(sizeof(char*) * ARGS_NUM);
     int i;
     char line[BUFFER_LEN];
     int status = -1;
@@ -77,8 +77,7 @@ int main () {
     bool write_out = false;
     bool read_in = false;
     bool piping = false;
-    int fd1[2]; // stores two ends of first pipe
-    int fd2[2]; // stores two ends of second
+    int pipe_fd[2]; // stores two ends of the pipe
 
     while (running) {
         printf("> ");
@@ -114,27 +113,44 @@ int main () {
             exit(EXIT_SUCCESS);
         }  
 
-        // set-up pipes
-        if (pipe(fd1) == -1) { 
-            perror("Pipe Failed"); 
-            exit(EXIT_FAILURE);
-        } if (pipe(fd2) == -1) { 
-            perror("Pipe Failed"); 
-            exit(EXIT_FAILURE);
-        }
-
         // check for redirects to files (reading/writing), and piping 
         if (argc >= 3) {
             if (strcmp(argv[argc - 2], "<") == 0) {
                 read_in = true;
             } else if (strcmp(argv[argc - 2], ">") == 0) {
                 write_out = true;
-            } else {
+            } else { // check if piping
                 for (i = 0; i < argc; i++) {
                     if (strcmp(argv[i], "|") == 0) {
                         piping = true;
                     }
                 }
+            }
+        }
+
+        if (piping) {
+            // set-up pipes
+            if (pipe(pipe_fd) == -1) { 
+                perror("Pipe Failed"); 
+                exit(EXIT_FAILURE);
+            }
+
+            // separate the commands before and after the '|' in argv
+            int j = 0;
+            bool passed_pipe_char =  false;
+            for (i = 0; i < argc; i++) {
+                if (strcmp(argv[i], "|") == 0) {
+                    passed_pipe_char = true;
+                    parsed_pre_pipe[j + 1] = NULL;
+                    j = -1; // -1 so that it is = 0 in the next iteration
+                } else if (passed_pipe_char) {
+                    parsed_pipe[j] = malloc(strlen(argv[i]) + 1);
+                    strcpy(parsed_pipe[j], argv[i]);
+                } else {
+                    parsed_pre_pipe[j] = malloc(strlen(argv[i]) + 1);
+                    strcpy(parsed_pre_pipe[j], argv[i]);
+                }
+                j++;
             }
         }
 
@@ -193,33 +209,15 @@ int main () {
                     }
 
                 } else if(piping) {
-                    // separate the commands before and after the '|' in argv
-                    int j = 0;
-                    bool passed_pipe_char =  false;
-                    for (i = 0; i < argc; i++) {
-                        if (strcmp(argv[i], "|") == 0) {
-                            passed_pipe_char = true;
-                            parsed_pre_pipe[j + 1] = NULL;
-                            j = -1; // -1 so that it is = 0 in the next iteration
-                        } else if (passed_pipe_char) {
-                            strcpy(parsed_pipe[j], argv[i]);
-                            printf("PARSED_PIPE[%d]: %s\n", j, parsed_pipe[j]);
-                        } else {
-                            strcpy(parsed_pre_pipe[j], argv[i]);
-                            printf("PRE[%d]: %s\n", j, parsed_pre_pipe[j]);
-                        }
-                        j++;
-                    }
-                    close(fd1[0]); // closing pipe read
-                    dup2(fd1[1], STDOUT_FILENO); // replacing stdout with pipe write
-                    close(fd1[1]);
-                    status = execvp(parsed_pre_pipe[0], parsed_pre_pipe);
+                    close(pipe_fd[1]); // closing pipe write
+                    dup2(pipe_fd[0], STDIN_FILENO); // replacing stdin with pipe read
+                    status = execvp(parsed_pipe[0], parsed_pipe);
                     if(status == -1) { // catch execvp error
                         fprintf(stderr, "-myShell: %s: command not found\n", line);
                         perror("command not found");
                         exit(EXIT_FAILURE);
                     }
-
+                    piping = false; //done piping so reset to default
                 } else {
                     status = execvp(argv[0], argv);
                     if(status == -1) { // catch execvp error
@@ -228,25 +226,16 @@ int main () {
                         exit(EXIT_FAILURE);
                     }
                 }
-
+//FIX THIS SECTION BELOW --------------------------------------------------------------------------------------
             } else { // Parent
                 if (piping) {
-                    pid_t new_child_pid = fork();
-                    if (new_child_pid == 0) {
-                        close(fd1[1]); // closing pipe write
-                        dup2(fd1[0], STDIN_FILENO); // replacing stdin with pipe read
-                        close(fd1[0]); // closing pipe read
-                        status = execvp(parsed_pipe[0], parsed_pipe);
-                        if(status == -1) { // catch execvp error
-                            fprintf(stderr, "-myShell: %s: command not found\n", line);
-                            perror("command not found");
-                            exit(EXIT_FAILURE);
-                        }
-                    } else {
-                        // parent executing and wating for two children
-                        wait(NULL);
-                        wait(NULL);
-                        piping = false;
+                    close(pipe_fd[0]); // closing pipe read
+                    dup2(pipe_fd[1], STDOUT_FILENO); // replacing stdout with pipe write
+                    status = execvp(parsed_pre_pipe[0], parsed_pre_pipe);
+                    if(status == -1) { // catch execvp error
+                        fprintf(stderr, "-myShell: %s: command not found\n", line);
+                        perror("command not found");
+                        exit(EXIT_FAILURE);
                     }
                 } else if (!background) { // NOT running in the background
                     waitpid(child_pid, NULL, 0);
