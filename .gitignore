@@ -11,3 +11,5 @@ wait.*
 *.md
 interactive.*
 .CIS3110_history
+.CIS3110_profile
+*.json

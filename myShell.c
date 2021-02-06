@@ -88,6 +88,7 @@ int main () {
     FILE *histfile = NULL;
     int hist_length = 0;
     pid_t child_pid = 0;
+    bool profile_has_been_read = false;
 
     // get current directory and store it for future reference
     getcwd(home, BUFFER_LEN - 1);
@@ -104,16 +105,35 @@ int main () {
     }
 
     //try to open the profile for reading
-    //TODO THIS NEED TO BE FINISHED
+    if ((profile = fopen(".CIS3110_profile", "r")) == NULL){
+        // doesn't exist so we must write it 
+        if (profile != NULL) fclose(profile);
+        profile_has_been_read = true; //set it to true since it is empty
+        if ((profile = fopen(".CIS3110_profile", "w+")) == NULL) {
+            fprintf(stderr, "ERROR: Failed to open profile for reading/writing.\n");
+            exit(EXIT_FAILURE);
+        }
+
+    }
 
     while (running) {
         getcwd(pwd, BUFFER_LEN - 1);
-        printf("%s> ", pwd);
+        if (profile_has_been_read) printf("%s> ", pwd);
+        bool is_exec = false;
 
         write_out = false;
         read_in = false;
+        piping = false;
 
-        if(!fgets(line, BUFFER_LEN, stdin)) break; //stops if user presses CTRL+D
+        if (profile_has_been_read) {
+            if(!fgets(line, BUFFER_LEN, stdin)) break; //stops if user presses CTRL+D
+        } else { // profile hasn't bee read yet, so read commands from there
+            if((fgets(line, BUFFER_LEN, profile)) == NULL) {
+                profile_has_been_read = true;
+                continue;
+            }
+            if (strlen(line) > 0 && line[0] != '\n') printf("\n");
+        }
 
         if (line == NULL) continue; // return if line is empty
 
@@ -124,7 +144,7 @@ int main () {
         }
 
         // store command in histfile
-        if (line != NULL) {
+        if (profile_has_been_read && line != NULL) {
             fprintf(histfile, " %d  %s\n", hist_length + 1, line);
             hist_length++;
         }
@@ -176,6 +196,11 @@ int main () {
             printf("\n[Process completed]\n");
             exit(EXIT_SUCCESS);
         }  
+
+        //check if it is an executable
+        if (argv[0] != NULL && argv[0][0] == '.' && argv[0][1] == '/') {
+            is_exec = true;
+        }
 
         // Change Directory
         if (argv[0] != NULL && strcmp(argv[0], "cd") == 0) {
@@ -368,6 +393,7 @@ int main () {
                     }
 
                 } else if(piping) {
+                    piping = false;
                     // set-up pipes
                     if (pipe(pipe_fd) == -1) { 
                         perror("Pipe Failed"); 
@@ -383,6 +409,7 @@ int main () {
                     if (new_child == 0) {
                         close(pipe_fd[0]); // closing pipe read
                         dup2(pipe_fd[1], STDOUT_FILENO); // replacing stdout with pipe write
+                        close(pipe_fd[1]);
                         status = execvp(parsed_pre_pipe[0], parsed_pre_pipe);
                         if(status == -1) { // catch execvp error
                             fprintf(stderr, "-myShell: %s: command not found\n", line);
@@ -395,6 +422,7 @@ int main () {
 
                         close(pipe_fd[1]); // closing pipe write
                         dup2(pipe_fd[0], STDIN_FILENO); // replacing stdin with pipe read
+                        close(pipe_fd[0]);
                         status = execvp(parsed_pipe[0], parsed_pipe);
                         if(status == -1) { // catch execvp error
                             fprintf(stderr, "-myShell: %s: command not found\n", line);
@@ -402,10 +430,13 @@ int main () {
                             exit(EXIT_FAILURE);
                         }
                     }
-                    piping = false; //done piping so reset to default
                 } else {
                     status = execvp(argv[0], argv);
                     if(status == -1) { // catch execvp error
+                        if (is_exec) {
+                            fprintf(stderr, "-myShell: %s: No such file or directory\n", line);
+                            exit(EXIT_FAILURE);
+                        }
                         fprintf(stderr, "-myShell: %s: command not found\n", line);
                         perror("command not found");
                         exit(EXIT_FAILURE);
