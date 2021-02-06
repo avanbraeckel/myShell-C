@@ -1,6 +1,6 @@
 Austin Van Braeckel - 1085829 - avanbrae@uoguelph.ca
 2021-02-05
-CIS*3310 Assignment 1
+CIS*3110 Assignment 1
 Submitted to: Professor Deborah Stacey
 
 IMPLEMENTATIONS:
