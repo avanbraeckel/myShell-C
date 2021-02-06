@@ -6,5 +6,5 @@ Assuming that the "home directory" (command: "cd ~") is the directory from which
 Assuming that there is a maximum of one '>' or '<' in a command
 Assuming there is only one level of piping ('|')
 
-Hist file is messed up
+Hist file is messed
 
