@@ -85,6 +85,7 @@ int main () {
     FILE *profile = NULL;
     FILE *histfile = NULL;
     int hist_length = 0;
+    pid_t child_pid = 0;
 
     // get current directory and store it for future reference
     getcwd(home, BUFFER_LEN - 1);
@@ -97,16 +98,14 @@ int main () {
 
     while (running) {
         getcwd(pwd, BUFFER_LEN - 1);
-        printf("~%s> ", pwd);
+        printf("%s> ", pwd);
 
         write_out = false;
         read_in = false;
 
         if(!fgets(line, BUFFER_LEN, stdin)) break; //stops if user presses CTRL+D
 
-        if (line == NULL) { // return if line is empty
-            continue;
-        }
+        if (line == NULL) continue; // return if line is empty
 
         // remove \n character at the end of the line
         int len = strlen(line);
@@ -122,7 +121,6 @@ int main () {
 
         // copy/save command for later use
         strcpy(line_cpy[process_count], line);
-
 
         char *token; //split command into separate strings
         token = strtok(line, " ");
@@ -150,11 +148,13 @@ int main () {
             }
             // free allocated memory
             for (i = 0; i < parsed_pipe_len; i++) {
-                free(parsed_pipe[i]);
+                if (parsed_pipe[i] != NULL)
+                    free(parsed_pipe[i]);
             }
             free(parsed_pipe);
             for (i = 0; i < parsed_pre_pipe_len; i++) {
-                free(parsed_pre_pipe[i]);
+                if (parsed_pre_pipe[i] != NULL)
+                    free(parsed_pre_pipe[i]);
             }
             free(parsed_pre_pipe);
             if (histfile != NULL) {
@@ -235,12 +235,6 @@ int main () {
         }
 
         if (piping) {
-            // set-up pipes
-            if (pipe(pipe_fd) == -1) { 
-                perror("Pipe Failed"); 
-                exit(EXIT_FAILURE);
-            }
-
             // separate the commands before and after the '|' in argv
             int j = 0;
             bool passed_pipe_char =  false;
@@ -267,7 +261,7 @@ int main () {
         sig_act.sa_handler = SIG_IGN;                
         sigaction(SIGCHLD, &sig_act, NULL);
 
-        pid_t child_pid = fork(); // fork child
+        child_pid = fork(); // fork child
 
         // Check to see if process should be run in the background
         if (argc >= 1 && argv[argc - 1] != NULL && strcmp(argv[argc - 1], "&") == 0) {
@@ -278,7 +272,6 @@ int main () {
             sig_act.sa_handler = SIG_IGN; // ignore
             sigemptyset(&sig_act.sa_mask);
             if (sigaction(SIGCHLD, &sig_act, NULL) < 0) {
-                printf("HERE sig\n");
                 perror("sigaction()");
                 exit(EXIT_FAILURE);
             }
@@ -318,13 +311,39 @@ int main () {
                     }
 
                 } else if(piping) {
-                    close(pipe_fd[1]); // closing pipe write
-                    dup2(pipe_fd[0], STDIN_FILENO); // replacing stdin with pipe read
-                    status = execvp(parsed_pipe[0], parsed_pipe);
-                    if(status == -1) { // catch execvp error
-                        fprintf(stderr, "-myShell: %s: command not found\n", line);
-                        perror("command not found");
+                    // set-up pipes
+                    if (pipe(pipe_fd) == -1) { 
+                        perror("Pipe Failed"); 
                         exit(EXIT_FAILURE);
+                    }
+                    
+                    pid_t new_child = fork();
+                    if (new_child < 0) {
+                        perror("fork failed");
+                        exit(EXIT_FAILURE);
+                    }
+
+                    if (new_child == 0) {
+                        close(pipe_fd[0]); // closing pipe read
+                        dup2(pipe_fd[1], STDOUT_FILENO); // replacing stdout with pipe write
+                        status = execvp(parsed_pre_pipe[0], parsed_pre_pipe);
+                        if(status == -1) { // catch execvp error
+                            fprintf(stderr, "-myShell: %s: command not found\n", line);
+                            perror("command not found");
+                            strcpy(line, "");
+                            exit(EXIT_FAILURE);
+                        }
+                    } else {
+                        waitpid(new_child, NULL, 0);
+
+                        close(pipe_fd[1]); // closing pipe write
+                        dup2(pipe_fd[0], STDIN_FILENO); // replacing stdin with pipe read
+                        status = execvp(parsed_pipe[0], parsed_pipe);
+                        if(status == -1) { // catch execvp error
+                            fprintf(stderr, "-myShell: %s: command not found\n", line);
+                            perror("command not found");
+                            exit(EXIT_FAILURE);
+                        }
                     }
                     piping = false; //done piping so reset to default
                 } else {
@@ -336,17 +355,8 @@ int main () {
                     }
                 }
             } else { // Parent
-                if (piping) {
-                    close(pipe_fd[0]); // closing pipe read
-                    dup2(pipe_fd[1], STDOUT_FILENO); // replacing stdout with pipe write
-                    status = execvp(parsed_pre_pipe[0], parsed_pre_pipe);
-                    if(status == -1) { // catch execvp error
-                        fprintf(stderr, "-myShell: %s: command not found\n", line);
-                        perror("command not found");
-                        strcpy(line, "");
-                        exit(EXIT_FAILURE);
-                    }
-                } else if (!background) { // NOT running in the background
+            
+                if (!background) { // NOT running in the background
                     waitpid(child_pid, NULL, 0);
                     // check to see if anything running in the background finished
                     sig_act.sa_flags = SA_RESTART | SA_NOCLDSTOP;
@@ -371,4 +381,10 @@ int main () {
 
 }
 
-// FIX REDIRECT SO IT CAN DO MULTIPLE (______ < ________ > ______)
+//TODO export command hard code
+//TODO echo $PATH and shit
+//TODO profile shit
+
+//Fix histfile?? probably not
+//Fix piping?? probably not
+// FIX REDIRECT SO IT CAN DO MULTIPLE (______ < ________ > ______) ?? maybe
