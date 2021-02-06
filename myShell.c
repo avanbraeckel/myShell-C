@@ -81,6 +81,8 @@ int main () {
     bool piping = false;
     int pipe_fd[2]; // stores two ends of the pipe
     char home[BUFFER_LEN];
+    char histloc[BUFFER_LEN];
+    char path[BUFFER_LEN];
     char pwd[BUFFER_LEN]; // present working directory
     FILE *profile = NULL;
     FILE *histfile = NULL;
@@ -89,12 +91,20 @@ int main () {
 
     // get current directory and store it for future reference
     getcwd(home, BUFFER_LEN - 1);
+    // set history file location
+    strcpy(histloc, home);
+    strcat(histloc, "/.CIS3110_history");
+    // set default PATH
+    strcpy(path, "/bin");
 
     // open the histfile for writing/reading
-    if ((histfile = fopen(".CIS3110_history", "w+")) == NULL) {
+    if ((histfile = fopen(histloc, "w+")) == NULL) {
         fprintf(stderr, "ERROR: Failed to open histfile for reading/writing.\n");
         exit(EXIT_FAILURE);
     }
+
+    //try to open the profile for reading
+    //TODO THIS NEED TO BE FINISHED
 
     while (running) {
         getcwd(pwd, BUFFER_LEN - 1);
@@ -188,7 +198,7 @@ int main () {
                         histfile = NULL;
                     }
                     // open a new histfile for writing/reading
-                    if ((histfile = fopen(".CIS3110_history", "w+")) == NULL) {
+                    if ((histfile = fopen(histloc, "w+")) == NULL) {
                         fprintf(stderr, "ERROR: Failed to open histfile for reading/writing.\n");
                         exit(EXIT_FAILURE);
                     }
@@ -216,6 +226,53 @@ int main () {
                         printf("%s", temp_line);
                     }
                 }
+            continue;
+        }
+
+        // export command
+        if (argv[0] != NULL && strcmp(argv[0], "export") == 0) {
+            if (argv[1] != NULL) {
+                int k, l = 0;
+                int export_len = strlen(argv[1]);
+                char export_var[ARGS_NUM];
+                char export_str[BUFFER_LEN - 1];
+                bool passed_eq = false;
+                for (k = 0; k < export_len; k++) {
+                    if (argv[1][k] == '=') {
+                        passed_eq = true;
+                        export_var[l] = '\0';
+                        l = -1; // set to -1 so it will be = 0 on next iteration
+                    } else if (passed_eq) { // passed the '='
+                        export_str[l] = argv[1][k];
+                    } else { // didn't pass the '=' yet
+                        export_var[l] = argv[1][k];
+                    }
+                    l++;
+                }
+                export_str[l] = '\0';
+
+                if (strcmp(export_var, "HOME") == 0) {
+                    strcpy(home, export_str);
+                } else if (strcmp(export_var, "PATH") == 0) {
+                    strcpy(path, export_str);
+                } else if (strcmp(export_var, "HISTFILE") == 0) {
+                    strcpy(histloc, export_str);
+                } // otherwise do nothing
+            }
+            continue;
+        }
+
+        // echo $HOME, $PATH, $HISTFILE
+        if (argv[0] != NULL && strcmp(argv[0], "echo") == 0 && argv[1] != NULL && argv[1][0] == '$') {
+            if (strcmp(argv[1], "$HOME") == 0) {
+                printf("%s\n", home);
+            } else if (strcmp(argv[1], "$PATH") == 0) {
+                printf("%s\n", path);
+            } else if (strcmp(argv[1], "$HISTFILE") == 0) {
+                printf("%s\n", histloc);
+            } else {
+                printf("\n");
+            }
             continue;
         }
 
@@ -355,7 +412,7 @@ int main () {
                     }
                 }
             } else { // Parent
-            
+
                 if (!background) { // NOT running in the background
                     waitpid(child_pid, NULL, 0);
                     // check to see if anything running in the background finished
