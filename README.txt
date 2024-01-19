@@ -1,6 +1,6 @@
-Austin Van Braeckel - 1085829 - avanbrae@uoguelph.ca
+Austin Van Braeckel
 2021-02-05
-CIS*3110 Assignment 1
+Operating Systems course Assignment
 Submitted to: Professor Deborah Stacey
 
 IMPLEMENTATIONS:
